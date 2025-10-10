@@ -7,14 +7,14 @@ async function main() {
     console.log("Running with account:", deployer.address);
 
     const FundingPool = await ethers.getContractFactory("FundingPool");
-    const pool = await FundingPool.attach("0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9");
+    const pool = await FundingPool.attach("YOUR_POOL_ADDRESS");
 
     const GovernanceToken = await ethers.getContractFactory("GovernanceToken");
-    const token = await GovernanceToken.attach("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9");
+    const token = await GovernanceToken.attach("YOUR_TOKEN_ADDRESS");
 
     const amount = parseUnits("100", 18);
 
-    // 🪙 Mint токены (если функция mint доступна)
+    // 🪙 Mint 
     const txMint = await token.mint(deployer.address, parseUnits("1000", 18));
     await txMint.wait();
     console.log("✅ Minted 1000 TTK to deployer");
