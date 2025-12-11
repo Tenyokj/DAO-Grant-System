@@ -131,35 +131,34 @@ contract IdeaRegistry is Ownable {
         return authorIdeas[_author];
     }
 
-function getIdea(uint256 _ideaId) external view returns (
-    uint256 id,
-    address author,
-    string memory title,
-    string memory description,
-    string memory link,
-    uint256 createdAt,
-    uint256 totalVotes,
-    uint8 status
-) {
-    require(_ideaId < _ideaIdCounter, "Idea does not exist");
-    Idea memory idea = ideas[_ideaId];
-    return (
-        idea.id,
-        idea.author,
-        idea.title,
-        idea.description,
-        idea.link,
-        idea.createdAt,
-        idea.totalVotes,
-        uint8(idea.status)
-    );
-}
-
-// И добавьте старую функцию под другим именем для совместимости (если нужно):
-function getIdeaStruct(uint256 _ideaId) external view returns (Idea memory) {
-    require(_ideaId < _ideaIdCounter, "Idea does not exist");
-    return ideas[_ideaId];
-}
+    function getIdea(uint256 _ideaId) external view returns (
+        uint256 id,
+        address author,
+        string memory title,
+        string memory description,
+        string memory link,
+        uint256 createdAt,
+        uint256 totalVotes,
+        uint8 status
+    ) {
+        require(_ideaId < _ideaIdCounter, "Idea does not exist");
+        Idea memory idea = ideas[_ideaId];
+        return (
+            idea.id,
+            idea.author,
+            idea.title,
+            idea.description,
+            idea.link,
+            idea.createdAt,
+            idea.totalVotes,
+            uint8(idea.status)
+        );
+    }
+    
+    function getIdeaStruct(uint256 _ideaId) external view returns (Idea memory) {
+        require(_ideaId < _ideaIdCounter, "Idea does not exist");
+        return ideas[_ideaId];
+    }
 
     /**
      * @notice Get the total number of ideas created
