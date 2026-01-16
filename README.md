@@ -6,15 +6,15 @@ A decentralized autonomous organization (DAO) grant management system built on E
 
 The DAO Grant System consists of five interconnected smart contracts that facilitate the complete lifecycle of idea submission, community voting, and grant distribution:
 
-    IdeaRegistry - Stores and manages ideas with metadata and status tracking
+IdeaRegistry - Stores and manages ideas with metadata and status tracking
 
-    overnanceToken - ERC20 token with snapshot capabilities for governance and voting
+overnanceToken - ERC20 token with snapshot capabilities for governance and voting
 
-    VotingSystem - Manages voting rounds and token-staked voting mechanisms
+VotingSystem - Manages voting rounds and token-staked voting mechanisms
 
-    FundingPool - Holds community deposits and distributes grants to winning ideas
+FundingPool - Holds community deposits and distributes grants to winning ideas
 
-    GrantManager - Central coordinator orchestrating the complete grant lifecycle
+GrantManager - Central coordinator orchestrating the complete grant lifecycle
 
 🏗️ Architecture
 Contract Relationships
@@ -94,29 +94,29 @@ Purpose: Central database for storing and managing ideas with complete metadata.
 
 Key Features:
 
-    Stores idea title, description, author, creation timestamp, and external links
+Stores idea title, description, author, creation timestamp, and external links
 
-    Manages idea lifecycle through status transitions (Pending → Voting → WonVoting → Funded → Completed/Rejected)
+Manages idea lifecycle through status transitions (Pending → Voting → WonVoting → Funded → Completed/Rejected)
+ 
+Authorizes external contracts (GrantManager) to update idea statuses
 
-    Authorizes external contracts (GrantManager) to update idea statuses
+Provides efficient lookup of ideas by author
 
-    Provides efficient lookup of ideas by author
-
-    Maintains vote counts for each idea
+Maintains vote counts for each idea
 
 Status States:
 
-    0: Pending - Idea created, awaiting inclusion in voting round
+0: Pending - Idea created, awaiting inclusion in voting round
 
-    1: Voting - Idea currently in active voting round
+1: Voting - Idea currently in active voting round
 
-    2: WonVoting - Idea won voting but hasn't received funds yet
+2: WonVoting - Idea won voting but hasn't received funds yet
 
-    3: Funded - Idea received grant distribution
+3: Funded - Idea received grant distribution
 
-    4: Rejected - Idea rejected (manual admin action)
+4: Rejected - Idea rejected (manual admin action)
 
-    5: Completed - Idea marked as completed (manual update)
+5: Completed - Idea marked as completed (manual update)
 
 2. GovernanceToken (GovernanceToken.sol)
 
@@ -124,23 +124,23 @@ Purpose: ERC20 governance token with snapshot capabilities for historical balanc
 
 Key Features:
 
-    Standard ERC20 implementation with 18 decimals
+Standard ERC20 implementation with 18 decimals
 
-    Controlled minting via authorized minters (initially GrantManager only)
+Controlled minting via authorized minters (initially GrantManager only)
 
-    Custom snapshot system compatible with OpenZeppelin v5 patterns
+Custom snapshot system compatible with OpenZeppelin v5 patterns
 
-    Maximum supply enforcement
+Maximum supply enforcement
 
-    Owner-controlled minter management
+Owner-controlled minter management
 
 Snapshot System:
 
-    Creates checkpoints on every transfer/mint/burn
+Creates checkpoints on every transfer/mint/burn
 
-    Allows historical balance queries via balanceOfAt() and totalSupplyAt()
+Allows historical balance queries via balanceOfAt() and totalSupplyAt()
 
-    Essential for off-chain governance voting weight calculations
+Essential for off-chain governance voting weight calculations
 
 3. VotingSystem (VotingSystem.sol)
 
@@ -148,27 +148,27 @@ Purpose: Manages token-staked voting rounds for idea selection.
 
 Key Features:
 
-    One-vote-per-address per round prevention
+One-vote-per-address per round prevention
 
-    Minimum stake requirement (default: 500 tokens)
+Minimum stake requirement (default: 500 tokens)
 
-    Configurable voting duration (default: 3 days)
+Configurable voting duration (default: 3 days)
 
-    Automatic winner determination (highest votes wins, first in tie)
+Automatic winner determination (highest votes wins, first in tie)
 
-    GrantManager-only round initiation and termination
+GrantManager-only round initiation and termination
 
-    Reentrancy protection for vote casting
+Reentrancy protection for vote casting
 
 Voting Process:
 
-    GrantManager initiates voting round with specific idea IDs
+GrantManager initiates voting round with specific idea IDs
 
-    Users stake tokens to vote for their preferred ideas
+Users stake tokens to vote for their preferred ideas
 
-    After voting period ends, GrantManager finalizes results
+After voting period ends, GrantManager finalizes results
 
-    Winning idea ID returned to GrantManager
+Winning idea ID returned to GrantManager
 
 4. FundingPool (FundingPool.sol)
 
@@ -176,29 +176,29 @@ Purpose: Custody contract for community deposits and grant distribution.
 
 Key Features:
 
-    Accepts governance token deposits from community members
+Accepts governance token deposits from community members
 
-    Tracks individual donor balances
+Tracks individual donor balances
 
-    Controlled fund distribution via GrantManager authorization
+Controlled fund distribution via GrantManager authorization
 
-    Prevents double distribution for same round
+Prevents double distribution for same round
 
-    Maintains distribution history for transparency
+Maintains distribution history for transparency
 
-    Owner-controlled emergency withdrawal capability
+Owner-controlled emergency withdrawal capability
 
 Distribution Flow:
 
-    GrantManager calls distributeFunds() with round ID and winning idea
+GrantManager calls distributeFunds() with round ID and winning idea
 
-    FundingPool verifies round hasn't been distributed
+FundingPool verifies round hasn't been distributed
 
-    Retrieves idea author from IdeaRegistry
+Retrieves idea author from IdeaRegistry
 
-    Transfers grant amount to author
+Transfers grant amount to author
 
-    Records distribution in history
+Records distribution in history
 
 5. GrantManager (GrantManager.sol)
 
@@ -206,38 +206,38 @@ Purpose: Central orchestrator managing the complete grant lifecycle.
 
 Key Features:
 
-    Creates and manages grant rounds with configurable timing
+Creates and manages grant rounds with configurable timing
 
-    Coordinates with all other contracts
+Coordinates with all other contracts
 
-    Updates idea statuses throughout lifecycle
+Updates idea statuses throughout lifecycle
 
-    Controls voting initiation and termination
+Controls voting initiation and termination
 
-    Handles finalization and fund distribution
+Handles finalization and fund distribution
 
-    Configurable grant amount per round (default: 1000 tokens)
+Configurable grant amount per round (default: 1000 tokens)
 
 Round Structure:
 
-    Each round has unique ID, name, and time window
+Each round has unique ID, name, and time window
 
-    Contains array of idea IDs for voting
+Contains array of idea IDs for voting
 
-    Tracks voting progress through boolean flags
+Tracks voting progress through boolean flags
 
-    Records winner and total votes
+Records winner and total votes
 
-    Maintains distribution status and timestamp
+Maintains distribution status and timestamp
 
 🚀 Deployment Guide
 Prerequisites
 
-    Node.js 16+ and npm/yarn
+Node.js 16+ and npm/yarn
 
-    Hardhat development environment
+Hardhat development environment
 
-    Access to Ethereum network (local, testnet, or mainnet)
+Access to Ethereum network (local, testnet, or mainnet)
 
 Deployment Sequence
 
@@ -296,30 +296,30 @@ Configuration Parameters
 
 GovernanceToken:
 
-    name: "TenyokjToken"
+name: "TenyokjToken"
 
-    symbol: "TTK"
+symbol: "TTK"
 
-    decimals: 18
+decimals: 18
 
-    maxSupply: Configurable (recommended: 1,000,000 tokens)
+maxSupply: Configurable (recommended: 1,000,000 tokens)
 
 VotingSystem:
 
-    votingDuration: 3 days (259,200 seconds)
+votingDuration: 3 days (259,200 seconds)
 
-    minStake: 500 tokens (500 * 10¹⁸)
+minStake: 500 tokens (500 * 10¹⁸)
 
 GrantManager:
 
-    grantAmountPerRound: 1000 tokens (1000 * 10¹⁸)
+grantAmountPerRound: 1000 tokens (1000 * 10¹⁸)
 
 📝 Usage Guide
 For Idea Creators
 
-    Submit Idea
+Submit Idea
 
-    ```bash
+```bash
     
     await ideaRegistry.createIdea(
       "Project Title",
@@ -327,21 +327,21 @@ For Idea Creators
       "https://github.com/project"  // Optional link
     );
 
-    ```
+```
 
-    Check Idea Status
+Check Idea Status
 
-    ```bash
+```bash
     const idea = await ideaRegistry.getIdea(ideaId);
     // Returns: [id, author, title, description, link, createdAt, totalVotes, status]
 
-    ```
+```
 
 For Community Members
 
-    Deposit Tokens into FundingPool
+Deposit Tokens into FundingPool
 
-    ```bash
+```bash
 
     // First approve token spending
     await governanceToken.approve(fundingPoolAddress, depositAmount);
@@ -349,10 +349,10 @@ For Community Members
     // Then deposit
     await fundingPool.deposit(depositAmount);
 
-    ```
-    Vote in Active Rounds
+```
+Vote in Active Rounds
 
-    ```bash
+```bash
 
     // Check active rounds
     const activeRounds = await grantManager.getActiveRounds();
@@ -363,12 +363,13 @@ For Community Members
     // Cast vote
     await votingSystem.vote(roundId, ideaId, voteAmount);
 
-    ```
+```
+
 For DAO Administrators
 
-    Create Grant Round
+Create Grant Round
 
-    ```bash
+```bash
 
     const startTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
     const endTime = startTime + (7 * 24 * 3600); // 7 days duration
@@ -380,10 +381,10 @@ For DAO Administrators
       [1, 2, 3]  // Array of idea IDs
     );
 
-    ```
-    Manage Round Lifecycle
+```
+Manage Round Lifecycle
 
-    ```bash
+```bash
 
     // Start voting (after start time)
     await grantManager.startVoting(roundId);
@@ -397,11 +398,11 @@ For DAO Administrators
     // Distribute funds to winner
     await grantManager.distributeFunds(roundId);
 
-    ```
+```
 
-    Configure System Parameters
+Configure System Parameters
   
-    ```bash
+```bash
 
     // Update voting duration
     await votingSystem.setVotingDuration(14 * 24 * 3600); // 14 days
@@ -412,42 +413,42 @@ For DAO Administrators
     // Update grant amount
     await grantManager.setGrantAmountPerRound(ethers.parseEther("5000")); // 5000 tokens
 
-    ```
+```
 
 🔒 Security Considerations
 Access Control
 
-    Ownable Pattern: All contracts use OpenZeppelin's Ownable for owner-only functions
+Ownable Pattern: All contracts use OpenZeppelin's Ownable for owner-only functions
 
-    Authorized Updaters: IdeaRegistry allows specific contracts to update statuses
+Authorized Updaters: IdeaRegistry allows specific contracts to update statuses
 
-    GrantManager-only: VotingSystem and FundingPool restrict key functions to GrantManager
+GrantManager-only: VotingSystem and FundingPool restrict key functions to GrantManager
 
-    Minter Control: GovernanceToken minting limited to authorized addresses
+Minter Control: GovernanceToken minting limited to authorized addresses
 
 Reentrancy Protection
 
-    VotingSystem and FundingPool use ReentrancyGuard for vote casting and fund distribution
+VotingSystem and FundingPool use ReentrancyGuard for vote casting and fund distribution
 
-    Follows checks-effects-interactions pattern
+Follows checks-effects-interactions pattern
 
 Input Validation
 
-    All external inputs are validated (non-zero addresses, valid ranges, etc.)
+All external inputs are validated (non-zero addresses, valid ranges, etc.)
 
-    IdeaRegistry validates title and description are non-empty
+IdeaRegistry validates title and description are non-empty
 
-    VotingSystem validates voting time windows and minimum stakes
+VotingSystem validates voting time windows and minimum stakes
 
-    GrantManager validates round timing and state transitions
+GrantManager validates round timing and state transitions
 
 State Consistency
 
-    Status transitions follow strict lifecycle (cannot skip steps)
+Status transitions follow strict lifecycle (cannot skip steps)
 
-    Round states prevent double actions (can't end voting twice)
+Round states prevent double actions (can't end voting twice)
 
-    FundingPool prevents double distribution for same round
+FundingPool prevents double distribution for same round
 
 🧪 Testing
 Test Structure
@@ -476,6 +477,7 @@ npx hardhat test test/VotingSystem.test.js
 npx hardhat coverage
 
 ```
+
 🌐 Integration Points
 Frontend Integration
 
@@ -501,86 +503,86 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
 Off-chain Services
 
-    Snapshot Analysis: Use balanceOfAt() for historical governance weight calculations
+Snapshot Analysis: Use balanceOfAt() for historical governance weight calculations
 
-    Round Monitoring: Track round states and trigger notifications
+Round Monitoring: Track round states and trigger notifications
 
-    Distribution History: Analyze funding patterns from getDistribution() records
+Distribution History: Analyze funding patterns from getDistribution() records
 
-    Idea Analytics: Process idea metadata and voting statistics
+Idea Analytics: Process idea metadata and voting statistics
 
 🔄 Upgrade Considerations
 Immutable Components
 
-    GovernanceToken logic is largely immutable after deployment
+GovernanceToken logic is largely immutable after deployment
 
-    VotingSystem and FundingPool have upgradeable parameters via owner functions
+VotingSystem and FundingPool have upgradeable parameters via owner functions
 
 Migration Strategy
 
-    Deploy new contract versions
+Deploy new contract versions
 
-    Use updateContractAddresses() in GrantManager to point to new implementations
+Use updateContractAddresses() in GrantManager to point to new implementations
 
-    Update authorized updaters in IdeaRegistry
+Update authorized updaters in IdeaRegistry
 
-    Transfer any necessary state via migration scripts
+Transfer any necessary state via migration scripts
 
 Proxy Pattern (Future)
 
 Consider implementing upgradeable proxies for:
 
-    GrantManager (coordination logic may evolve)
+GrantManager (coordination logic may evolve)
 
-    VotingSystem (voting mechanisms may need updates)
+VotingSystem (voting mechanisms may need updates)
 
-    FundingPool (distribution logic improvements)
+FundingPool (distribution logic improvements)
 
 📊 Gas Optimization
 Storage Patterns
 
-    Uses mappings for efficient lookups
+Uses mappings for efficient lookups
 
-    Packed structs where possible
+Packed structs where possible
 
-    Minimal storage writes during voting
+Minimal storage writes during voting
 
 Batch Operations
 
-    GrantManager handles multiple idea status updates in single transaction
+GrantManager handles multiple idea status updates in single transaction
 
-    Voting results calculated on-chain efficiently
+Voting results calculated on-chain efficiently
 
 View Functions
 
-    Optimized view functions for frontend queries
+Optimized view functions for frontend queries
 
-    Separate getIdeaAuthor() for minimal data retrieval
+Separate getIdeaAuthor() for minimal data retrieval
 
 🐛 Known Limitations
 Current Version
 
-    Fixed grant amount per round (not percentage-based)
+Fixed grant amount per round (not percentage-based)
 
-    No vote delegation mechanism
+No vote delegation mechanism
 
-    No quadratic voting or advanced voting mechanisms
+No quadratic voting or advanced voting mechanisms
 
-    Basic tie-breaking (first idea wins)
+Basic tie-breaking (first idea wins)
 
-    No automatic snapshot triggering
+No automatic snapshot triggering
 
 Planned Improvements
 
-    Dynamic grant amounts based on pool size or votes
+Dynamic grant amounts based on pool size or votes
 
-    Delegated voting capabilities
+Delegated voting capabilities
 
-    Advanced voting mechanisms (quadratic, conviction voting)
+Advanced voting mechanisms (quadratic, conviction voting)
 
-    More sophisticated tie-breaking
+More sophisticated tie-breaking
 
-    Automated snapshot creation at round start
+Automated snapshot creation at round start
 
 🤝 Contributing
 Development Setup
@@ -606,24 +608,24 @@ npx hardhat node
 
 Code Style
 
-    Follow Solidity style guide (solhint configuration included)
+Follow Solidity style guide (solhint configuration included)
 
-    Use descriptive function and variable names
+Use descriptive function and variable names
 
-    Include comprehensive NatSpec documentation
+Include comprehensive NatSpec documentation
 
-    Maintain test coverage above 90%
+Maintain test coverage above 90%
 
 📄 License
 
 MIT License - see LICENSE file for details.
 🙏 Acknowledgments
 
-    OpenZeppelin Contracts for secure, audited base implementations
+OpenZeppelin Contracts for secure, audited base implementations
 
-    Hardhat framework for development and testing
+Hardhat framework for development and testing
 
-    Ethereum community for best practices and patterns
+Ethereum community for best practices and patterns
 
 Version: 1.2.0
 Network Compatibility: Ethereum Mainnet, Testnets, EVM-compatible chains
