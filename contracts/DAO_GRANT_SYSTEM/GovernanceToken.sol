@@ -5,62 +5,93 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
-/* ========== GOVERNANCE TOKEN ========== */
-
 /**
  * @title GovernanceToken
- * @notice ERC20 token used for DAO governance, deposits in FundingPool, and minting for grant distributions.
- * @dev Compatible with GrantManager and FundingPool contracts. Supports snapshots and controlled minting.
- *
- * NOTE: Реализация snapshot здесь заменена на механизм чекпоинтов, совместимый с OpenZeppelin v5 (без ERC20Snapshot).
- *      snapshot() возвращает snapshotId, который маппится на номер блока, а затем можно получить баланс/totalSupply на момент snapshot
- *      через balanceOfAt(account, snapshotId) и totalSupplyAt(snapshotId).
+ * @notice ERC20 token used for DAO governance, deposits in FundingPool, and minting for grant distributions
+ * @dev Compatible with GrantManager and FundingPool contracts. Supports snapshots and controlled minting
+ * 
+ * Note: Snapshot implementation uses checkpoint mechanism compatible with OpenZeppelin v5 (without ERC20Snapshot)
+ *       snapshot() returns snapshotId which maps to block number, allowing query of historical balances
+ *       via balanceOfAt(account, snapshotId) and totalSupplyAt(snapshotId)
  */
 contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
 
-    /* ========== STATE ========== */
+    /* ========== STATE VARIABLES ========== */
     
-    mapping(address => bool) public authorizedMinters;  // Addresses allowed to mint tokens
-    uint256 public maxSupply;                            // Maximum total supply of the token
+    /// @dev Addresses authorized to mint tokens
+    mapping(address => bool) public authorizedMinters;
+    
+    /// @notice Maximum total supply of the token
+    uint256 public maxSupply;
 
     /* ========== EVENTS ========== */
     
+    /**
+     * @notice Emitted when minter authorization status changes
+     * @param minter Address whose authorization changed
+     * @param status New authorization status
+     */
     event MinterUpdated(address indexed minter, bool status);
+    
+    /**
+     * @notice Emitted when new tokens are minted
+     * @param to Recipient address
+     * @param amount Amount minted
+     */
     event TokensMinted(address indexed to, uint256 amount);
+    
+    /**
+     * @notice Emitted when tokens are burned
+     * @param from Address tokens are burned from
+     * @param amount Amount burned
+     */
     event TokensBurned(address indexed from, uint256 amount);
+    
+    /**
+     * @notice Emitted when a new snapshot is created
+     * @param snapshotId Unique identifier of the created snapshot
+     */
     event SnapshotCreated(uint256 snapshotId);
 
     /* ========== CONSTRUCTOR ========== */
     
     /**
-     * @notice Initialize GovernanceToken and authorize initial minters
-     * @param _grantManager Address of GrantManager (authorized minter)
-     * @param _fundingPool Address of FundingPool (authorized minter)
-     * @param _maxSupply Maximum total supply of the token
+     * @notice Initializes GovernanceToken with GrantManager as authorized minter
+     * @param _grantManager GrantManager contract address (authorized minter)
+     * @param _maxSupply Maximum total token supply
+     * @custom:requires _grantManager cannot be zero address
      */
-    constructor(address _grantManager, address _fundingPool, uint256 _maxSupply)
+    constructor(address _grantManager, uint256 _maxSupply)
         ERC20("TenyokjToken", "TTK") Ownable(msg.sender)
     {
         require(_grantManager != address(0), "GovernanceToken: grantManager 0");
-        require(_fundingPool != address(0), "GovernanceToken: fundingPool 0");
 
         maxSupply = _maxSupply;
-
-        // Authorize GrantManager and FundingPool as minters
         authorizedMinters[_grantManager] = true;
-        authorizedMinters[_fundingPool] = true;
-
         emit MinterUpdated(_grantManager, true);
-        emit MinterUpdated(_fundingPool, true);
     }
 
-    /* ========== MINT / BURN ========== */
+    /* ========== MODIFIERS ========== */
+
+    /**
+     * @notice Restricts function access to owner or authorized minters
+     */
+    modifier onlyGovernance {
+        require(msg.sender == owner() || authorizedMinters[msg.sender], "not allowed");
+        _;
+    }
+
+    /* ========== MINTING & BURNING FUNCTIONS ========== */
     
     /**
-     * @notice Mint new tokens to a specific address
-     * @dev Only authorized minters can call. Checks maxSupply.
+     * @notice Mints new tokens to a specific address
+     * @dev Only authorized minters can call. Respects maxSupply limit
      * @param to Recipient address
      * @param amount Amount of tokens to mint
+     * @custom:emits TokensMinted
+     * @custom:requires Caller must be authorized minter
+     * @custom:requires amount > 0
+     * @custom:requires totalSupply + amount ≤ maxSupply
      */
     function mint(address to, uint256 amount) external {
         require(authorizedMinters[msg.sender], "GovernanceToken: minter not authorized");
@@ -72,64 +103,67 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
     }
 
     /**
-     * @notice Burn tokens from a specific address
+     * @notice Burns tokens from a specific address
      * @dev Only owner or authorized minters can call
      * @param from Address to burn tokens from
      * @param amount Amount of tokens to burn
+     * @custom:emits TokensBurned
+     * @custom:requires Caller must be owner or authorized minter
+     * @custom:requires amount > 0
      */
-    function burn(address from, uint256 amount) external {
-        require(msg.sender == owner() || authorizedMinters[msg.sender], 
-                "GovernanceToken: not authorized to burn");
+    function burnTokens(address from, uint256 amount) external {
+        require(
+            msg.sender == owner() || authorizedMinters[msg.sender],
+            "GovernanceToken: not authorized to burn"
+        );
         require(amount > 0, "GovernanceToken: zero amount");
 
         _burn(from, amount);
         emit TokensBurned(from, amount);
     }
 
-    /* ========== SNAPSHOT (custom implementation for OZ v5) ========== */
-    //
-    // Реализация: snapshotId => blockNumber
-    // Для каждого аккаунта и для totalSupply храним массив чекпоинтов (blockNumber, value).
-    // При каждом изменении баланса/totalSupply (в _update) добавляем/обновляем чекпоинт.
-    // API:
-    //  - snapshot() -> возвращает snapshotId (owner только)
-    //  - balanceOfAt(account, snapshotId) -> баланс на блоке, соответствующем snapshotId
-    //  - totalSupplyAt(snapshotId) -> totalSupply на блоке snapshot
-    //
-
+    /* ========== SNAPSHOT FUNCTIONALITY ========== */
+    
+    /**
+     * @dev Checkpoint structure for tracking historical balances
+     */
     struct Checkpoint {
         uint256 blockNumber;
         uint256 value;
     }
 
-    // account => checkpoints[]
+    /// @dev Account address -> array of balance checkpoints
     mapping(address => Checkpoint[]) private _accountCheckpoints;
-    // checkpoints for total supply
+    
+    /// @dev Array of total supply checkpoints
     Checkpoint[] private _totalSupplyCheckpoints;
-
-    // snapshot counter and mapping to block number
-    uint256 private _snapshotCounter;
+    
+    /// @dev Snapshot counter and mapping to block numbers
+    uint256 private _snapshotCounter = 1;
     mapping(uint256 => uint256) private _snapshotBlock;
 
     /**
-     * @notice Create a snapshot of balances for governance / voting
-     * @dev Only owner can trigger snapshots
-     * @return snapshotId ID of the created snapshot
+     * @notice Creates a snapshot of current token balances for governance voting
+     * @return snapshotId Unique identifier of the created snapshot
+     * @custom:emits SnapshotCreated
+     * @custom:requires Caller must be owner or authorized minter
      */
-    function snapshot() external onlyOwner returns (uint256 snapshotId) {
-        // create a new snapshot id and store the block number
+    function snapshot() external onlyGovernance returns (uint256 snapshotId) {
         _snapshotCounter++;
         snapshotId = _snapshotCounter;
         _snapshotBlock[snapshotId] = block.number;
 
         emit SnapshotCreated(snapshotId);
+
+        return snapshotId;
     }
 
     /**
-     * @notice Get balance of `account` at the time of snapshot `snapshotId`
-     * @param account Address to query
+     * @notice Retrieves account balance at time of snapshot
+     * @param account Address to query historical balance for
      * @param snapshotId Snapshot identifier returned by snapshot()
-     * @return balance at snapshot (or 0 if none)
+     * @return balance Account balance at snapshot time (0 if none)
+     * @custom:requires snapshotId must exist
      */
     function balanceOfAt(address account, uint256 snapshotId) public view returns (uint256) {
         uint256 snapBlock = _snapshotBlock[snapshotId];
@@ -138,9 +172,10 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
     }
 
     /**
-     * @notice Get totalSupply at the time of snapshot `snapshotId`
+     * @notice Retrieves total token supply at time of snapshot
      * @param snapshotId Snapshot identifier returned by snapshot()
-     * @return totalSupply at snapshot (or 0 if none)
+     * @return totalSupply Token total supply at snapshot time (0 if none)
+     * @custom:requires snapshotId must exist
      */
     function totalSupplyAt(uint256 snapshotId) public view returns (uint256) {
         uint256 snapBlock = _snapshotBlock[snapshotId];
@@ -148,34 +183,33 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
         return _valueAt(_totalSupplyCheckpoints, snapBlock);
     }
 
-    // Binary search helper to get checkpoint value at given block (largest blockNumber <= target)
+    /**
+     * @dev Binary search helper to find checkpoint value at given block
+     * @param ckpts Checkpoint array to search
+     * @param blockNumber Target block number
+     * @return value Checkpoint value at or before target block
+     */
     function _valueAt(Checkpoint[] storage ckpts, uint256 blockNumber) internal view returns (uint256) {
         uint256 len = ckpts.length;
-        if (len == 0) {
-            return 0;
-        }
+        if (len == 0) return 0;
 
-        // If the latest checkpoint is at or before the block, return it
         if (ckpts[len - 1].blockNumber <= blockNumber) {
             return ckpts[len - 1].value;
         }
 
-        // If the first checkpoint is after the block, return 0
         if (ckpts[0].blockNumber > blockNumber) {
             return 0;
         }
 
-        // Binary search
         uint256 low = 0;
         uint256 high = len - 1;
         while (low < high) {
-            uint256 mid = (low + high + 1) / 2; // bias up
+            uint256 mid = (low + high + 1) / 2;
             if (ckpts[mid].blockNumber == blockNumber) {
                 return ckpts[mid].value;
             } else if (ckpts[mid].blockNumber < blockNumber) {
                 low = mid;
             } else {
-                // ckpts[mid].blockNumber > blockNumber
                 high = mid - 1;
             }
         }
@@ -183,7 +217,11 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
         return ckpts[low].value;
     }
 
-    // Push or update checkpoint in storage array for given account
+    /**
+     * @dev Updates or creates checkpoint for account balance
+     * @param account Account to update checkpoint for
+     * @param newValue New balance value
+     */
     function _pushAccountCheckpoint(address account, uint256 newValue) internal {
         Checkpoint[] storage ckpts = _accountCheckpoints[account];
         uint256 currentBlock = block.number;
@@ -195,14 +233,16 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
 
         Checkpoint storage last = ckpts[ckpts.length - 1];
         if (last.blockNumber == currentBlock) {
-            // overwrite in same block
             last.value = newValue;
         } else {
             ckpts.push(Checkpoint({blockNumber: currentBlock, value: newValue}));
         }
     }
 
-    // Push or update checkpoint for total supply
+    /**
+     * @dev Updates or creates checkpoint for total supply
+     * @param newValue New total supply value
+     */
     function _pushTotalSupplyCheckpoint(uint256 newValue) internal {
         Checkpoint[] storage ckpts = _totalSupplyCheckpoints;
         uint256 currentBlock = block.number;
@@ -223,9 +263,12 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
     /* ========== MINTER MANAGEMENT ========== */
     
     /**
-     * @notice Add or remove an authorized minter
-     * @param minter Address of minter
-     * @param status true = authorize, false = revoke
+     * @notice Adds or removes authorized minter
+     * @param minter Address to modify minter status for
+     * @param status true to authorize, false to revoke
+     * @custom:emits MinterUpdated
+     * @custom:requires Only owner can call
+     * @custom:requires minter cannot be zero address
      */
     function setMinter(address minter, bool status) external onlyOwner {
         require(minter != address(0), "GovernanceToken: minter 0");
@@ -233,11 +276,13 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
         emit MinterUpdated(minter, status);
     }
 
-    /* ========== OVERRIDES REQUIRED BY SOLIDITY ========== */
+    /* ========== OVERRIDES ========== */
 
     /**
-     * @dev Override required by OpenZeppelin v5: _update is called on transfers/mint/burn.
-     *      We call super._update to maintain ERC20 internals, then push checkpoints for accounts and totalSupply.
+     * @dev Overrides ERC20._update to maintain checkpoint system
+     * @param from Sender address (address(0) for minting)
+     * @param to Recipient address (address(0) for burning)
+     * @param value Amount being transferred
      */
     function _update(
         address from,
@@ -246,7 +291,6 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
     ) internal virtual override {
         super._update(from, to, value);
 
-        // Update checkpoints for accounts involved and for total supply
         if (from != address(0)) {
             _pushAccountCheckpoint(from, balanceOf(from));
         }
@@ -254,12 +298,12 @@ contract GovernanceToken is ERC20, ERC20Burnable, Ownable {
             _pushAccountCheckpoint(to, balanceOf(to));
         }
 
-        // totalSupply might change on mint/burn; push current totalSupply always (cheap enough)
         _pushTotalSupplyCheckpoint(totalSupply());
     }
 
     /**
-     * @dev Override decimals() for clarity (default 18)
+     * @dev Returns token decimals (standard 18)
+     * @return uint8 Token decimals
      */
     function decimals() public pure override returns (uint8) {
         return 18;

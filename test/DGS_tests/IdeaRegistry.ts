@@ -5,235 +5,247 @@ import {
   type NetworkHelpers,
 } from "../setup.js";
 
-describe("IdeaRegistry test", async function () {
+describe("IdeaRegistry", function () {
   let ethers: HardhatEthers;
   let networkHelpers: NetworkHelpers;
+  let registry: any;
+  let owner: any;
+  let user1: any;
+  let user2: any;
+  let updater: any;
+  
+  const TITLE = "Great Idea";
+  const DESCRIPTION = "Detailed description of the idea";
+  const LINK = "https://example.com/idea";
 
-  before(async () => {
+  beforeEach(async function () {
     const connection = await hre.network.connect();
     ({ ethers, networkHelpers } = connection);
+
+    const signers = await ethers.getSigners();
+    [owner, user1, user2, updater] = signers;
+    
+    registry = await ethers.deployContract("IdeaRegistry", []);
   });
 
-  const DECIMALS = 10n ** 18n;
-  const MINSTAKE = 500n * DECIMALS;
-
-  async function createIdea(ideaContract: any, signer: any) {
-    const tx = await ideaContract
-      .connect(signer)
-      .createIdea("Name", "Description", "https://example.com")
-
-    await tx.wait();
-
-    const total = await ideaContract.totalIdeas();
-    const ideaId = total - 1n; // always BigInt
-
-    return ideaId;
-  }
-
-  async function deploy() {
-    const [owner, alice, bob, stranger] = await ethers.getSigners();
-
-    const maxSupply = 10_000_000n * DECIMALS;
-    const token = await ethers.deployContract("GovernanceToken", [
-      owner.address,
-      owner.address,
-      maxSupply,
-    ]);
-
-    const idea = await ethers.deployContract("IdeaRegistry", []);
-    const voting = await ethers.deployContract("VotingSystem", [
-      token.target,
-      idea.target,
-    ]);
-    const pool = await ethers.deployContract("FundingPool", [
-      token.target,
-      voting.target,
-      idea.target,
-    ]);
-
-    // wiring
-    await pool.setVotingSystem(voting.target);
-    await voting.setGovernanceToken(token.target);
-    await voting.setIdeaRegistry(idea.target);
-    await voting.setFundingPool(pool.target);
-
-    const manager = await ethers.deployContract("GrantManager", [
-      voting.target,
-      pool.target,
-      idea.target,
-    ]);
-
-    await token.setMinter(manager.target, true);
-    await token.setMinter(pool.target, true);
-
-    await voting.setGrantManager(manager.target);
-
-    return { idea, owner, alice, bob, stranger, voting, pool, manager, token };
-  }
-
-  it("emits IdeaCreated", async function () {
-    const {idea, alice} = await deploy();
-
-    await expect(
-        idea.connect(alice).createIdea("Name", "Description", "https://example.com")
-    )
-    .to.emit(idea, "IdeaCreated")
-    .withArgs(
-        0n,                 // if it's the firts idea
-        alice.address,
-        "Name",
-    );
+  describe("Deployment", function () {
+    it("Should set the correct owner", async function () {
+      expect(await registry.owner()).to.equal(owner.address);
+    });
   });
 
+  describe("Creating Ideas", function () {
+    it("Should create a new idea", async function () {
+      await expect(
+        registry.connect(user1).createIdea(TITLE, DESCRIPTION, LINK)
+      )
+        .to.emit(registry, "IdeaCreated")
+        .withArgs(1, user1.address, TITLE);
+      
+      const idea = await registry.getIdea(1);
+      
+      expect(idea[0]).to.equal(1); // id
+      expect(idea[1]).to.equal(user1.address); // author
+      expect(idea[2]).to.equal(TITLE); // title
+      expect(idea[3]).to.equal(DESCRIPTION); // description
+      expect(idea[4]).to.equal(LINK); // link
+      expect(idea[7]).to.equal(0); // status = Pending
+    });
 
-  it("creates idea successfully", async function () {
-    const { idea, alice, owner } = await deploy();
+    it("Should reject empty title", async function () {
+      await expect(
+        registry.connect(user1).createIdea("", DESCRIPTION, LINK)
+      ).to.be.revertedWith("Title required");
+    });
 
-    const ideaId = await createIdea(idea, alice);
-    const meta = await idea.getIdea(ideaId);
+    it("Should reject empty description", async function () {
+      await expect(
+        registry.connect(user1).createIdea(TITLE, "", LINK)
+      ).to.be.revertedWith("Description required");
+    });
 
-    expect(meta.id).to.equal(ideaId);
-    expect(meta.author).to.equal(alice.address);
-    expect(meta.title).to.equal("Name");
-    expect(meta.description).to.equal("Description");
-    expect(meta.link).to.equal("https://example.com");
-    expect(meta.createdAt).to.be.gt(0n);
-    expect(meta.totalVotes).to.equal(0n);
-    expect(meta.status).to.equal(0); // Pending
+    it("Should track ideas by author", async function () {
+      await registry.connect(user1).createIdea("Idea 1", "Desc 1", "");
+      await registry.connect(user1).createIdea("Idea 2", "Desc 2", "");
+      await registry.connect(user2).createIdea("Idea 3", "Desc 3", "");
+      
+      const user1Ideas = await registry.getIdeasByAuthor(user1.address);
+      const user2Ideas = await registry.getIdeasByAuthor(user2.address);
+      
+      expect(user1Ideas.length).to.equal(2);
+      expect(user2Ideas.length).to.equal(1);
+      expect(user1Ideas[0]).to.equal(1);
+      expect(user1Ideas[1]).to.equal(2);
+      expect(user2Ideas[0]).to.equal(3);
+    });
 
-    await expect(idea.connect(owner).addVote(ideaId, 1))
-      .to.emit(idea, "IdeaVoted")
-      .withArgs(ideaId, owner, 1);
-
-    const metaAfter = await idea.getIdea(ideaId);
-    expect(metaAfter.totalVotes).to.equal(1n);
-
-    const ideasByAlice = await idea.getIdeasByAuthor(alice.address);
-    expect(ideasByAlice).to.contain(ideaId);
+    it("Should increment idea counter", async function () {
+      await registry.connect(user1).createIdea("Idea 1", "Desc 1", "");
+      await registry.connect(user2).createIdea("Idea 2", "Desc 2", "");
+      await registry.connect(user1).createIdea("Idea 3", "Desc 3", "");
+      
+      expect(await registry.totalIdeas()).to.equal(3);
+    });
   });
 
-  it("reverts when title or description is empty", async function () {
-    const { idea, alice } = await deploy();
+  describe("Getting Idea Author", function () {
+    beforeEach(async function () {
+      await registry.connect(user1).createIdea(TITLE, DESCRIPTION, LINK);
+    });
 
-    await expect(
-      idea.connect(alice).createIdea("", "Description", "https://example.com")
-    ).to.be.revertedWith("Title required");
+    it("Should return correct author", async function () {
+      const author = await registry.getIdeaAuthor(1);
+      expect(author).to.equal(user1.address);
+    });
 
-    await expect(
-      idea.connect(alice).createIdea("Name", "", "https://example.com")
-    ).to.be.revertedWith("Description required");
+    it("Should revert for non-existent idea", async function () {
+      await expect(
+        registry.getIdeaAuthor(999)
+      ).to.be.revertedWith("Idea does not exist");
+    });
   });
 
-  it("allows owner to update status and emits IdeaStatusUpdated", async function () {
-    const { idea, owner } = await deploy();
-    const ideaId = await createIdea(idea, owner);
+  describe("Updating Status", function () {
+    beforeEach(async function () {
+      await registry.connect(user1).createIdea(TITLE, DESCRIPTION, LINK);
+      await registry.connect(owner).authorizeUpdater(updater.address, true);
+    });
 
-    await expect(idea.connect(owner).updateStatus(ideaId, 2))
-      .to.emit(idea, "IdeaStatusUpdated")
-      .withArgs(ideaId, 2);
+    it("Should update status via authorized updater", async function () {
+      await expect(
+        registry.connect(updater).updateStatus(1, 1) // Status.Voting
+      )
+        .to.emit(registry, "IdeaStatusUpdated")
+        .withArgs(1, 1);
+      
+      const idea = await registry.getIdea(1);
+      expect(idea[7]).to.equal(1); // Status.Voting
+    });
 
-    const meta = await idea.getIdea(ideaId);
-    expect(meta.status).to.equal(2); // Funded
+    it("Should update status via owner", async function () {
+      await expect(
+        registry.connect(owner).updateStatus(1, 2) // Status.WonVoting
+      )
+        .to.emit(registry, "IdeaStatusUpdated")
+        .withArgs(1, 2);
+      
+      const idea = await registry.getIdea(1);
+      expect(idea[7]).to.equal(2); // Status.WonVoting
+    });
+
+    it("Should reject unauthorized status update", async function () {
+      await expect(
+        registry.connect(user2).updateStatus(1, 1)
+      ).to.be.revertedWith("IdeaRegistry: not authorized");
+    });
+
+    it("Should reject invalid status value", async function () {
+      await expect(
+        registry.connect(updater).updateStatus(1, 10) // Invalid status
+      ).to.be.revertedWith("Invalid status");
+    });
+
+    it("Should reject update for non-existent idea", async function () {
+      await expect(
+        registry.connect(updater).updateStatus(999, 1)
+      ).to.be.revertedWith("Idea does not exist");
+    });
+
+    it("Should handle all status transitions", async function () {
+      const statuses = [0, 1, 2, 3, 4, 5]; // All valid statuses
+      
+      for (let i = 0; i < statuses.length; i++) {
+        await registry.connect(updater).updateStatus(1, statuses[i]);
+        const idea = await registry.getIdea(1);
+        expect(idea[7]).to.equal(statuses[i]);
+      }
+    });
   });
 
-  it("reverts for non-owner", async function () {
-    const { idea, alice } = await deploy();
-    const ideaId = await createIdea(idea, alice);
+  describe("Adding Votes", function () {
+    beforeEach(async function () {
+      await registry.connect(user1).createIdea(TITLE, DESCRIPTION, LINK);
+    });
 
-    await expect(idea.connect(alice).updateStatus(ideaId, 2)).to.be.revertedWith(
-      "IdeaRegistry: not authorized"
-    );
+    it("Should add votes via owner", async function () {
+      const voteAmount = 100n;
+      
+      await expect(
+        registry.connect(owner).addVote(1, voteAmount)
+      )
+        .to.emit(registry, "IdeaVoted")
+        .withArgs(1, owner.address, voteAmount);
+      
+      const idea = await registry.getIdea(1);
+      expect(idea[6]).to.equal(voteAmount); // totalVotes
+    });
+
+    it("Should accumulate votes", async function () {
+      await registry.connect(owner).addVote(1, 50n);
+      await registry.connect(owner).addVote(1, 30n);
+      await registry.connect(owner).addVote(1, 20n);
+      
+      const idea = await registry.getIdea(1);
+      expect(idea[6]).to.equal(100n);
+    });
+
+    it("Should reject non-owner from adding votes", async function () {
+      await expect(
+        registry.connect(user1).addVote(1, 100)
+      ).to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+    });
+
+    it("Should reject adding votes to non-existent idea", async function () {
+      await expect(
+        registry.connect(owner).addVote(999, 100)
+      ).to.be.revertedWith("Idea does not exist");
+    });
   });
 
-  it("authorizes updaters correctly", async function () {
-    const { idea, owner, alice } = await deploy();
-    const ideaId = await createIdea(idea, alice);
+  describe("Getting Idea Struct", function () {
+    beforeEach(async function () {
+      await registry.connect(user1).createIdea(TITLE, DESCRIPTION, LINK);
+    });
 
-    await idea.connect(owner).authorizeUpdater(alice, true);
-
-    await expect(idea.connect(alice).updateStatus(ideaId, 2))
-      .to.emit(idea, "IdeaStatusUpdated")
-      .withArgs(ideaId, 2);
-
-    const meta = await idea.getIdea(ideaId);
-    expect(meta.status).to.equal(2);
+    it("Should return complete idea struct", async function () {
+      const ideaStruct = await registry.getIdeaStruct(1);
+      
+      expect(ideaStruct.id).to.equal(1);
+      expect(ideaStruct.author).to.equal(user1.address);
+      expect(ideaStruct.title).to.equal(TITLE);
+      expect(ideaStruct.description).to.equal(DESCRIPTION);
+      expect(ideaStruct.link).to.equal(LINK);
+      expect(ideaStruct.status).to.equal(0); // Pending
+    });
   });
 
-  it("reverts for invalid status or non-existent idea", async function () {
-    const { idea, owner } = await deploy();
-    const ideaId = await createIdea(idea, owner);
+  describe("Authorizing Updaters", function () {
+    it("Should authorize updater", async function () {
+      await registry.connect(owner).authorizeUpdater(updater.address, true);
+      
+      expect(await registry.authorizedUpdaters(updater.address)).to.equal(true);
+    });
 
-    await expect(idea.connect(owner).updateStatus(3, 1)).to.be.revertedWith(
-      "Idea does not exist"
-    );
+    it("Should revoke updater", async function () {
+      // First authorize
+      await registry.connect(owner).authorizeUpdater(updater.address, true);
+      
+      // Then revoke
+      await registry.connect(owner).authorizeUpdater(updater.address, false);
+      
+      expect(await registry.authorizedUpdaters(updater.address)).to.equal(false);
+    });
 
-    await expect(idea.connect(owner).updateStatus(ideaId, 12)).to.be.revertedWith(
-      "Invalid status"
-    );
-  });
+    it("Should reject zero address updater", async function () {
+      await expect(
+        registry.connect(owner).authorizeUpdater(ethers.ZeroAddress, true)
+      ).to.be.revertedWith("IdeaRegistry: updater 0");
+    });
 
-  it("integration: VotingSystem as owner can call updateStatus", async function () {
-    const { voting, owner, idea } = await deploy();
-
-    const ideaId = await createIdea(idea, owner);
-
-    await idea.connect(owner).authorizeUpdater(voting.target, true);
-
-    await expect(voting.updateIdeaStatus(ideaId, 2))
-      .to.emit(idea, "IdeaStatusUpdated")
-      .withArgs(ideaId, 2);
-
-    const meta = await idea.getIdea(ideaId);
-    expect(meta.status).to.equal(2); 
-  });
-
-  it("allows owner to add votes and emits IdeaVoted", async function () {
-    const { idea, owner } = await deploy();
-    const ideaId = await createIdea(idea, owner);
-
-    await expect(idea.connect(owner).addVote(ideaId, 5))
-      .to.emit(idea, "IdeaVoted")
-      .withArgs(ideaId, owner, 5);
-
-    const meta = await idea.getIdea(ideaId);
-    expect(meta.totalVotes).to.equal(5n);
-  });
-
-  it("reverts for non-owner (addVote)", async function () {
-    const { idea, alice } = await deploy();
-    const ideaId = await createIdea(idea, alice);
-
-    await expect(idea.connect(alice).addVote(ideaId, 1))
-      .to.be.revertedWithCustomError(idea, "OwnableUnauthorizedAccount")
-      .withArgs(alice);
-  });
-
-  it("getIdeasByAuthor returns author ideas array", async function () {
-    const { idea, alice } = await deploy();
-    const ideaId1 = await createIdea(idea, alice);
-    const ideaId2 = await createIdea(idea, alice);
-
-    const ideasByAlice: bigint[] = await idea.getIdeasByAuthor(alice.address);
-    expect(ideasByAlice).to.deep.equal([ideaId1, ideaId2]);
-  });
-
-  it("getIdea returns Idea struct and totalIdeas works", async function () {
-    const { idea, alice } = await deploy();
-
-    const before = await idea.totalIdeas();
-    const ideaId = await createIdea(idea, alice);
-    const after = await idea.totalIdeas();
-
-    expect(after).to.equal(before + 1n);
-
-    const meta = await idea.getIdea(ideaId);
-    expect(meta.id).to.equal(ideaId);
-    expect(meta.author).to.equal(alice.address);
-    expect(meta.title).to.equal("Name");
-    expect(meta.description).to.equal("Description");
-    expect(meta.link).to.equal("https://example.com");
-    expect(meta.createdAt).to.be.gt(0n);
-    expect(meta.totalVotes).to.equal(0n);
-    expect(meta.status).to.equal(0); // Pending
+    it("Should reject non-owner from authorizing", async function () {
+      await expect(
+        registry.connect(user1).authorizeUpdater(updater.address, true)
+      ).to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+    });
   });
 });

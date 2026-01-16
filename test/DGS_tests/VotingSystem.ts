@@ -1,4 +1,3 @@
-import { ZeroAddress } from "ethers";
 import {
   expect,
   hre,
@@ -6,291 +5,398 @@ import {
   type NetworkHelpers,
 } from "../setup.js";
 
-describe("VotingSystem (fixed)", function () {
+describe("VotingSystem", function () {
   let ethers: HardhatEthers;
   let networkHelpers: NetworkHelpers;
+  let votingSystem: any;
+  let token: any;
+  let owner: any;
+  let user1: any;
+  let user2: any;
+  let user3: any;
+  let grantManager: any;
+  
+  let MIN_STAKE: bigint; // 500 tokens
+  const VOTING_DURATION = 3 * 24 * 60 * 60; // 3 days
 
-  before(async () => {
+  beforeEach(async function () {
     const connection = await hre.network.connect();
     ({ ethers, networkHelpers } = connection);
-  });
 
-  const DECIMALS = 10n ** 18n;
-  const MINSTAKE = 500n * DECIMALS;
+    MIN_STAKE = ethers.parseEther("500");
 
-  // ------------------------------------------------------------
-  // helpers
-  // ------------------------------------------------------------
-  async function createIdea(ideaContract: any, signer: any) {
-    const tx = await ideaContract.connect(signer).createIdea(
-      "Name",
-      "Description",
-      "https://example.com"
-    );
-    const rc = await tx.wait();
-    if (!rc) throw new Error("createIdea tx not mined");
-
-    const ev = rc.logs
-      .map((l: any) => {
-        try { return ideaContract.interface.parseLog(l); } catch { return null; }
-      })
-      .find((p: any) => p && p.name === "IdeaCreated");
-
-    expect(ev, "IdeaCreated event not found").to.not.equal(undefined);
-    return ev!.args[0] as bigint;
-  }
-
-  function getRoundIdFromTx(rc: any, votingContract: any) {
-    const ev = rc.logs
-      .map((l: any) => {
-        try { return votingContract.interface.parseLog(l); } catch { return null; }
-      })
-      .find((p: any) => p && p.name === "VotingRoundStarted");
-
-    if (!ev) throw new Error("VotingRoundStarted event not found");
-    return ev.args[0] as bigint;
-  }
-
- async function deployFixture() {
-    const [owner, voter1, voter2, voter3] = await ethers.getSigners();
-
-    const maxSupply = 10_000_000n * DECIMALS;
-    const token = await ethers.deployContract("GovernanceToken", [
-        owner.address,
-        owner.address,
-        maxSupply,
-    ]);
-
-    const idea = await ethers.deployContract("IdeaRegistry", []);
-    const voting = await ethers.deployContract("VotingSystem", [
-        token.target,
-        idea.target,
-    ]);
-    const pool = await ethers.deployContract("FundingPool", [
-        token.target,
-        voting.target,
-        idea.target,
-    ]);
-
-    // IMPORTANT: ONLY authorize VotingSystem as an updater
-    // DO NOT transfer ownership - the effectiveness remains with the deployer
-    await idea.connect(owner).authorizeUpdater(voting.target, true);
-
-    // wiring
-    await pool.setVotingSystem(voting.target);
-    await voting.setGovernanceToken(token.target);
-    await voting.setIdeaRegistry(idea.target);
-    await voting.setFundingPool(pool.target);
-
-    const manager = await ethers.deployContract("GrantManager", [
-        voting.target,
-        pool.target,
-        idea.target,
-    ]);
-
-    await token.setMinter(manager.target, true);
-    await token.setMinter(pool.target, true);
-
-    await voting.setGrantManager(manager.target);
-
-    return {
-        owner,
-        voter1,
-        voter2,
-        voter3,
-        token,
-        idea,
-        voting,
-        pool,
-        manager,
-    };
-}
-
-  async function freshDeploy() {
-    return deployFixture();
-  }
-
-  // ------------------------------------------------------------
-  // TESTS
-  // ------------------------------------------------------------
-  it("deploys with correct params", async function () {
-    const { token, idea, voting, pool, manager } = await freshDeploy();
-
-    expect(await voting.governanceToken()).to.equal(token.target);
-    expect(await voting.ideaRegistry()).to.equal(idea.target);
-    expect(await voting.fundingPool()).to.equal(pool.target);
-    expect(await voting.grantManager()).to.equal(manager.target);
-  });
-
-  it("reverts on zero-address setters", async function () {
-    const { voting } = await freshDeploy();
-
-    await expect(voting.setFundingPool(ZeroAddress)).to.be.revertedWith("pool 0");
-    await expect(voting.setGrantManager(ZeroAddress)).to.be.revertedWith("mgr 0");
-    await expect(voting.setIdeaRegistry(ZeroAddress)).to.be.revertedWith("ideaRegistry 0");
-    await expect(voting.setGovernanceToken(ZeroAddress)).to.be.revertedWith("token 0");
-  });
-
-  it("creates a voting round and returns correct round meta", async function () {
-    const { idea, voting, owner } = await freshDeploy();
-
-    const id1 = await createIdea(idea, owner);
-    const id2 = await createIdea(idea, owner);
-
-    const tx = await voting.connect(owner).startVotingRound([id1, id2]);
-    const rc = await tx.wait();
-    if (!rc) throw new Error("startVotingRound tx not mined");
-    const roundId = getRoundIdFromTx(rc, voting);
-
-    const meta = await voting.getRoundMeta(roundId);
-    expect(meta[0]).to.equal(roundId);
-    expect(meta[3]).to.equal(true);
-    const ideaIds = meta[6] as Array<any>;
-    expect(ideaIds.length).to.equal(2);
-    expect(ideaIds.map((x: any) => BigInt(x.toString()))).to.include(id1);
-    expect(ideaIds.map((x: any) => BigInt(x.toString()))).to.include(id2);
-  });
-
-  it("allows multiple rounds and increments round id", async function () {
-    const { idea, voting, owner } = await freshDeploy();
-
-    const a1 = await createIdea(idea, owner);
-    const a2 = await createIdea(idea, owner);
-    const tx1 = await voting.connect(owner).startVotingRound([a1, a2]);
-    const rc1 = await tx1.wait();
-    if (!rc1) throw new Error("tx1 not mined");
-    const round1 = getRoundIdFromTx(rc1, voting);
-
-    const a3 = await createIdea(idea, owner);
-    const a4 = await createIdea(idea, owner);
-    const tx2 = await voting.connect(owner).startVotingRound([a3, a4]);
-    const rc2 = await tx2.wait();
-    if (!rc2) throw new Error("tx2 not mined");
-    const round2 = getRoundIdFromTx(rc2, voting);
-
-    expect(BigInt(round2)).to.be.greaterThan(BigInt(round1));
-  });
-
-  it("allows voting (mint/approve) and tallies votes", async function () {
-    const { idea, voting, token, owner, voter1 } = await freshDeploy();
-
-    await voting.setVotingDuration(60);
-    const id1 = await createIdea(idea, owner);
-    const id2 = await createIdea(idea, owner);
-
-    const tx = await voting.connect(owner).startVotingRound([id1, id2]);
-    const rc = await tx.wait();
-    if (!rc) throw new Error("startVotingRound tx not mined");
-    const roundId = getRoundIdFromTx(rc, voting);
-
-    // mint + approve
-    await token.connect(owner).mint(voter1.address, MINSTAKE * 2n);
-    await token.connect(voter1).approve(voting.target, MINSTAKE * 2n);
-
-    const amount = MINSTAKE;
-    await expect(voting.connect(voter1).vote(roundId, id1, amount))
-      .to.emit(voting, "VoteCast")
-      .withArgs(voter1.address, roundId, id1, amount);
-
-    expect(await voting.getVotesForIdea(roundId, id1)).to.equal(amount);
-    const meta = await voting.getRoundMeta(roundId);
-    expect(meta[4]).to.equal(amount);
-
-    await expect(voting.connect(voter1).vote(roundId, id1, amount)).to.be.revertedWith("already voted");
-  });
-
-  it("reverts when voting amount < minStake", async function () {
-    const { idea, voting, token, owner, voter1 } = await freshDeploy();
-
-    const id1 = await createIdea(idea, owner);
-    const id2 = await createIdea(idea, owner);
-    const tx = await voting.connect(owner).startVotingRound([id1, id2]);
-    const rc = await tx.wait();
-    if (!rc) throw new Error("tx not mined");
-    const roundId = getRoundIdFromTx(rc, voting);
-
-    await token.connect(owner).mint(voter1.address, MINSTAKE / 10n);
-    await token.connect(voter1).approve(voting.target, MINSTAKE / 10n);
-
-    await expect(voting.connect(voter1).vote(roundId, id1, MINSTAKE / 10n)).to.be.revertedWith("amount < minStake");
-  });
-
-  it("reverts when voting for idea not in the round", async function () {
-    const { idea, voting, token, owner, voter1 } = await freshDeploy();
-
-    const id1 = await createIdea(idea, owner);
-    const idOutside = 9999n;
-    const tx = await voting.connect(owner).startVotingRound([id1]);
-    const rc = await tx.wait();
-    if (!rc) throw new Error("tx not mined");
-    const roundId = getRoundIdFromTx(rc, voting);
-
-    await token.connect(owner).mint(voter1.address, MINSTAKE * 2n);
-    await token.connect(voter1).approve(voting.target, MINSTAKE * 2n);
-
-    await expect(voting.connect(voter1).vote(roundId, idOutside, MINSTAKE)).to.be.revertedWith("idea not in round");
-  });
-
-it("ends round after duration, sets winner and updates IdeaRegistry", async function () {
-    const { idea, voting, token, owner, voter1, voter2 } = await freshDeploy();
-
-    const id1 = await createIdea(idea, owner);
-    const id2 = await createIdea(idea, owner);
-
-    const tx = await voting.connect(owner).startVotingRound([id1, id2]);
-    const rc = await tx.wait();
-    const roundId = getRoundIdFromTx(rc, voting);
-
-    const stakeAmount = MINSTAKE;
-    await token.connect(owner).mint(voter1.address, stakeAmount * 2n);
-    await token.connect(owner).mint(voter2.address, stakeAmount * 2n);
-    await token.connect(voter1).approve(voting.target, stakeAmount * 2n);
-    await token.connect(voter2).approve(voting.target, stakeAmount * 2n);
-
-    await voting.connect(voter1).vote(roundId, id1, stakeAmount);
-    await voting.connect(voter2).vote(roundId, id1, stakeAmount);
-
-    const votes = await voting.getVotesForIdea(roundId, id1);
-    expect(votes).to.equal(stakeAmount * 2n);
+    const signers = await ethers.getSigners();
+    [owner, user1, user2, user3, grantManager] = signers;
     
-    console.log("Test passed - voting works correctly");
-});
-
-  it("reverts endVotingRound if called too early", async function () {
-    const { voting, idea, owner } = await freshDeploy();
-
-    const id1 = await createIdea(idea, owner);
-    const id2 = await createIdea(idea, owner);
-    await voting.setVotingDuration(1000);
-    const tx = await voting.connect(owner).startVotingRound([id1, id2]);
-    const rc = await tx.wait();
-    if (!rc) throw new Error("tx not mined");
-    const roundId = getRoundIdFromTx(rc, voting);
-
-    await expect(voting.endVotingRound(roundId)).to.be.revertedWith("round not finished");
+    // Deploy token
+    token = await ethers.deployContract("GovernanceToken", [
+      grantManager.address,
+      ethers.parseEther("1000000")
+    ]);
+    
+    // Deploy voting system
+    votingSystem = await ethers.deployContract("VotingSystem", [
+      await token.getAddress()
+    ]);
+    
+    // Set grant manager
+    await votingSystem.connect(owner).setGrantManager(grantManager.address);
+    
+    // Mint tokens for testing
+    const mintAmount = ethers.parseEther("10000");
+    await token.connect(grantManager).mint(user1.address, mintAmount);
+    await token.connect(grantManager).mint(user2.address, mintAmount);
+    await token.connect(grantManager).mint(user3.address, mintAmount);
+    
+    // Approve voting system
+    await token.connect(user1).approve(await votingSystem.getAddress(), mintAmount);
+    await token.connect(user2).approve(await votingSystem.getAddress(), mintAmount);
+    await token.connect(user3).approve(await votingSystem.getAddress(), mintAmount);
   });
 
-  it("getWinningIdea returns 0 while active and winner after end", async function () {
-    const { idea, voting, token, owner, voter1 } = await freshDeploy();
+  describe("Deployment", function () {
+    it("Should set correct parameters", async function () {
+      expect(await votingSystem.minStake()).to.equal(MIN_STAKE);
+      expect(await votingSystem.votingDuration()).to.equal(VOTING_DURATION);
+      expect(await votingSystem.grantManager()).to.equal(grantManager.address);
+    });
 
-    await voting.setVotingDuration(3);
-    const id1 = await createIdea(idea, owner);
-    const id2 = await createIdea(idea, owner);
-    const tx = await voting.connect(owner).startVotingRound([id1, id2]);
-    const rc = await tx.wait();
-    if (!rc) throw new Error("tx not mined");
-    const roundId = getRoundIdFromTx(rc, voting);
+    it("Should set correct governance token", async function () {
+      expect(await votingSystem.governanceToken()).to.equal(await token.getAddress());
+    });
+  });
 
-    expect(await voting.getWinningIdea(roundId)).to.equal(0n);
+  describe("Starting Voting Round", function () {
+    it("Should start voting round via grant manager", async function () {
+      const ideaIds = [1, 2, 3];
+      
+      await expect(
+        votingSystem.connect(grantManager).startVotingRound(1, ideaIds)
+      )
+        .to.emit(votingSystem, "VotingRoundStarted");
+      
+      const roundInfo = await votingSystem.getRoundInfo(1);
+      
+      expect(roundInfo[0]).to.equal(1); // roundId
+      expect(roundInfo[1]).to.deep.equal(ideaIds); // ideaIds
+      expect(roundInfo[4]).to.equal(true); // active
+      expect(roundInfo[5]).to.equal(false); // ended
+    });
 
-    await token.connect(owner).mint(voter1.address, MINSTAKE * 2n);
-    await token.connect(voter1).approve(voting.target, MINSTAKE * 2n);
-    await voting.connect(voter1).vote(roundId, id1, MINSTAKE);
+    it("Should reject starting round without ideas", async function () {
+      await expect(
+        votingSystem.connect(grantManager).startVotingRound(1, [])
+      ).to.be.revertedWith("no ideaIds");
+    });
 
-    await ethers.provider.send("evm_increaseTime", [10]);
-    await ethers.provider.send("evm_mine", []);
-    await voting.endVotingRound(roundId);
+    it("Should reject duplicate idea in round", async function () {
+      const ideaIds = [1, 1, 2]; // Duplicate idea 1
+      
+      await expect(
+        votingSystem.connect(grantManager).startVotingRound(1, ideaIds)
+      ).to.be.revertedWith("duplicate idea");
+    });
 
-    expect(await voting.getWinningIdea(roundId)).to.equal(id1);
+    it("Should reject zero ideaId", async function () {
+      const ideaIds = [1, 0, 2]; // Zero ideaId
+      
+      await expect(
+        votingSystem.connect(grantManager).startVotingRound(1, ideaIds)
+      ).to.be.revertedWith("ideaId 0");
+    });
+
+    it("Should reject duplicate round ID", async function () {
+      const ideaIds = [1, 2];
+      
+      await votingSystem.connect(grantManager).startVotingRound(1, ideaIds);
+      
+      await expect(
+        votingSystem.connect(grantManager).startVotingRound(1, ideaIds)
+      ).to.be.revertedWith("round already exists");
+    });
+
+    it("Should reject non-grant-manager from starting round", async function () {
+      await expect(
+        votingSystem.connect(owner).startVotingRound(1, [1, 2])
+      ).to.be.revertedWith("VotingSystem: caller is not GrantManager");
+    });
+  });
+
+  describe("Voting", function () {
+    beforeEach(async function () {
+      const ideaIds = [1, 2];
+      await votingSystem.connect(grantManager).startVotingRound(1, ideaIds);
+    });
+
+    it("Should allow voting for idea in round", async function () {
+      const voteAmount = ethers.parseEther("1000");
+      
+      await expect(
+        votingSystem.connect(user1).vote(1, 1, voteAmount)
+      )
+        .to.emit(votingSystem, "VoteCast")
+        .withArgs(user1.address, 1, 1, voteAmount);
+      
+      const votes = await votingSystem.getVotesForIdea(1, 1);
+      expect(votes).to.equal(voteAmount);
+      
+      const roundInfo = await votingSystem.getRoundInfo(1);
+      expect(roundInfo[6]).to.equal(voteAmount); // totalVotes
+    });
+
+    it("Should accumulate votes for same idea", async function () {
+      const vote1 = ethers.parseEther("600");
+      const vote2 = ethers.parseEther("500");
+      
+      await votingSystem.connect(user1).vote(1, 1, vote1);
+      await votingSystem.connect(user2).vote(1, 1, vote2);
+      
+      const votes = await votingSystem.getVotesForIdea(1, 1);
+      expect(votes).to.equal(vote1 + vote2);
+      
+      const roundInfo = await votingSystem.getRoundInfo(1);
+      expect(roundInfo[6]).to.equal(vote1 + vote2); // totalVotes
+    });
+
+    it("Should reject voting below minimum stake", async function () {
+      const smallAmount = ethers.parseEther("100");
+      
+      await expect(
+        votingSystem.connect(user1).vote(1, 1, smallAmount)
+      ).to.be.revertedWith("amount < minStake");
+    });
+
+    it("Should reject double voting by same user", async function () {
+      const voteAmount = ethers.parseEther("600");
+      
+      await votingSystem.connect(user1).vote(1, 1, voteAmount);
+      
+      await expect(
+        votingSystem.connect(user1).vote(1, 1, voteAmount)
+      ).to.be.revertedWith("already voted");
+    });
+
+    it("Should reject voting for non-existent idea in round", async function () {
+      const voteAmount = ethers.parseEther("600");
+      
+      await expect(
+        votingSystem.connect(user1).vote(1, 3, voteAmount) // Idea 3 not in round
+      ).to.be.revertedWith("idea not in round");
+    });
+
+    it("Should reject voting after round ends", async function () {
+      const voteAmount = ethers.parseEther("600");
+      
+      // Fast forward past voting duration
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      
+      await expect(
+        votingSystem.connect(user1).vote(1, 1, voteAmount)
+      ).to.be.revertedWith("not in window");
+    });
+
+    it("Should handle multiple ideas voting", async function () {
+      const vote1 = ethers.parseEther("600");
+      const vote2 = ethers.parseEther("500");
+      
+      await votingSystem.connect(user1).vote(1, 1, vote1);
+      await votingSystem.connect(user2).vote(1, 2, vote2);
+      
+      const votes1 = await votingSystem.getVotesForIdea(1, 1);
+      const votes2 = await votingSystem.getVotesForIdea(1, 2);
+      
+      expect(votes1).to.equal(vote1);
+      expect(votes2).to.equal(vote2);
+      
+      const roundInfo = await votingSystem.getRoundInfo(1);
+      expect(roundInfo[6]).to.equal(vote1 + vote2); // totalVotes
+    });
+  });
+
+  describe("Ending Voting Round", function () {
+    beforeEach(async function () {
+      const ideaIds = [1, 2];
+      await votingSystem.connect(grantManager).startVotingRound(1, ideaIds);
+      
+      // Users vote
+      await votingSystem.connect(user1).vote(1, 1, ethers.parseEther("700"));
+      await votingSystem.connect(user2).vote(1, 2, ethers.parseEther("500"));
+    });
+
+    it("Should end voting round via grant manager", async function () {
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(1)
+      )
+        .to.emit(votingSystem, "VotingRoundEnded")
+        .withArgs(1, 1, ethers.parseEther("700"));
+      
+      const roundInfo = await votingSystem.getRoundInfo(1);
+      
+      expect(roundInfo[4]).to.equal(false); // active = false
+      expect(roundInfo[5]).to.equal(true); // ended = true
+      expect(roundInfo[7]).to.equal(1); // winningIdeaId = 1
+      expect(roundInfo[8]).to.equal(ethers.parseEther("700")); // winningVotes
+    });
+
+    it("Should return winning idea ID", async function () {
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(1)
+      ).to.emit(votingSystem, "VotingRoundEnded")
+      .withArgs(1, 1, ethers.parseEther("700"));
+    });
+
+    it("Should handle tie (first idea wins)", async function () {
+      // Create new round with tie
+      await votingSystem.connect(grantManager).startVotingRound(2, [3, 4]);
+      
+      await votingSystem.connect(user1).vote(2, 3, ethers.parseEther("500"));
+      await votingSystem.connect(user2).vote(2, 4, ethers.parseEther("500"));
+      
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(2)
+      ).to.emit(votingSystem, "VotingRoundEnded")
+        .withArgs(2, 3, ethers.parseEther("500"));  // First idea wins in tie
+    });
+
+    it("Should handle no votes (winner = 0)", async function () {
+      // Create new round with no votes
+      await votingSystem.connect(grantManager).startVotingRound(3, [5]);
+      
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(3)
+      ).to.emit(votingSystem, "VotingRoundEnded")
+       .withArgs(3, 0, 0);  // No winner
+    });
+
+    it("Should reject ending before voting period", async function () {
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(1)
+      ).to.be.revertedWith("round not finished");
+    });
+
+    it("Should reject ending inactive round", async function () {
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      await votingSystem.connect(grantManager).endVotingRound(1);
+      
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(1)
+      ).to.be.revertedWith("round already ended");
+    });
+
+    it("Should reject non-grant-manager from ending round", async function () {
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      
+      await expect(
+        votingSystem.connect(owner).endVotingRound(1)
+      ).to.be.revertedWith("VotingSystem: caller is not GrantManager");
+    });
+
+    it("Should reject ending non-existent round", async function () {
+      await expect(
+        votingSystem.connect(grantManager).endVotingRound(999)
+      ).to.be.revertedWith("round not exist");
+    });
+  });
+
+  describe("Getting Results", function () {
+    beforeEach(async function () {
+      const ideaIds = [1, 2];
+      await votingSystem.connect(grantManager).startVotingRound(1, ideaIds);
+      
+      await votingSystem.connect(user1).vote(1, 1, ethers.parseEther("800"));
+      await votingSystem.connect(user2).vote(1, 2, ethers.parseEther("500"));
+      
+      await networkHelpers.time.increase(VOTING_DURATION + 1);
+      await votingSystem.connect(grantManager).endVotingRound(1);
+    });
+
+    it("Should get round results", async function () {
+      const [winningId, totalVotes] = await votingSystem.getRoundResults(1);
+      
+      expect(winningId).to.equal(1);
+      expect(totalVotes).to.equal(ethers.parseEther("1300"));
+    });
+
+    it("Should reject getting results before round ends", async function () {
+      // Create new round
+      await votingSystem.connect(grantManager).startVotingRound(2, [3]);
+      
+      await expect(
+        votingSystem.getRoundResults(2)
+      ).to.be.revertedWith("voting not ended");
+    });
+  });
+
+  describe("Admin Functions", function () {
+    it("Should set voting duration", async function () {
+      const newDuration = 7 * 24 * 60 * 60; // 7 days
+      await votingSystem.connect(owner).setVotingDuration(newDuration);
+      
+      expect(await votingSystem.votingDuration()).to.equal(newDuration);
+    });
+
+    it("Should set minimum stake", async function () {
+      const newMinStake = ethers.parseEther("1000");
+      await votingSystem.connect(owner).setMinStake(newMinStake);
+      
+      expect(await votingSystem.minStake()).to.equal(newMinStake);
+    });
+
+    it("Should set governance token", async function () {
+      const newToken = user1.address; // Mock address
+      await votingSystem.connect(owner).setGovernanceToken(newToken);
+      
+      expect(await votingSystem.governanceToken()).to.equal(newToken);
+    });
+
+    it("Should set grant manager", async function () {
+      const newManager = user1.address;
+      await votingSystem.connect(owner).setGrantManager(newManager);
+      
+      expect(await votingSystem.grantManager()).to.equal(newManager);
+    });
+
+    it("Should withdraw tokens (owner only)", async function () {
+      // Create round and vote to have tokens in contract
+      const ideaIds = [1];
+      await votingSystem.connect(grantManager).startVotingRound(1, ideaIds);
+      
+      const voteAmount = ethers.parseEther("1000");
+      await votingSystem.connect(user1).vote(1, 1, voteAmount);
+      
+      // Check contract balance
+      const contractBalance = await token.balanceOf(await votingSystem.getAddress());
+      expect(contractBalance).to.equal(voteAmount);
+      
+      // Owner withdraws
+      const withdrawAmount = ethers.parseEther("500");
+      await votingSystem.connect(owner).withdrawTokens(
+        await token.getAddress(),
+        owner.address,
+        withdrawAmount
+      );
+      
+      // Check new balance
+      const newContractBalance = await token.balanceOf(await votingSystem.getAddress());
+      expect(newContractBalance).to.equal(voteAmount - withdrawAmount);
+    });
+
+    it("Should reject non-owner from admin functions", async function () {
+      await expect(
+        votingSystem.connect(user1).setVotingDuration(1000)
+      ).to.be.revertedWithCustomError(votingSystem, "OwnableUnauthorizedAccount");
+      
+      await expect(
+        votingSystem.connect(user1).setGrantManager(user2.address)
+      ).to.be.revertedWithCustomError(votingSystem, "OwnableUnauthorizedAccount");
+    });
   });
 });

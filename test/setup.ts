@@ -12,6 +12,7 @@ import type {
 } from "ethers";
 import { encodeRlp, keccak256, toBeHex } from "ethers";
 import hre from "hardhat";
+import hardhatEthersChaiMatchers from "@nomicfoundation/hardhat-ethers-chai-matchers";
 
 export {
     hre,
@@ -25,4 +26,5 @@ export {
     type Signature,
     type AddressLike,
     type EventLog,
+    hardhatEthersChaiMatchers,
 };
