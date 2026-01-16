@@ -1,52 +1,55 @@
-#DAO Grant System
+DAO Grant System
 
 A decentralized autonomous organization (DAO) grant management system built on Ethereum. This platform enables community-driven funding of ideas through token-based governance, voting mechanisms, and transparent fund distribution.
-##📋 Overview
 
-##The DAO Grant System consists of five interconnected smart contracts that facilitate the complete lifecycle of idea submission, community voting, and grant distribution:
+📋 Overview
 
-    ###IdeaRegistry - Stores and manages ideas with metadata and status tracking
+The DAO Grant System consists of five interconnected smart contracts that facilitate the complete lifecycle of idea submission, community voting, and grant distribution:
 
-    ###GovernanceToken - ERC20 token with snapshot capabilities for governance and voting
+    IdeaRegistry - Stores and manages ideas with metadata and status tracking
 
-    ###VotingSystem - Manages voting rounds and token-staked voting mechanisms
+    overnanceToken - ERC20 token with snapshot capabilities for governance and voting
 
-    ###FundingPool - Holds community deposits and distributes grants to winning ideas
+    VotingSystem - Manages voting rounds and token-staked voting mechanisms
 
-    ###GrantManager - Central coordinator orchestrating the complete grant lifecycle
+    FundingPool - Holds community deposits and distributes grants to winning ideas
 
-##🏗️ Architecture
-###Contract Relationships
+    GrantManager - Central coordinator orchestrating the complete grant lifecycle
 
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   IdeaRegistry  │◄────│  GrantManager   │────►│  VotingSystem   │
-│                 │     │                 │     │                 │
-│ • Idea storage  │     │ • Round mgmt    │     │ • Vote counting │
-│ • Status updates│     │ • Coordination  │     │ • Token staking │
-│ • Author lookup │     │ • Finalization  │     │ • Winner det.   │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-         ▲                       │                       ▲
-         │                       │                       │
-         │                       ▼                       │
-         │              ┌─────────────────┐              │
-         └──────────────│   FundingPool   │◄─────────────┘
-                        │                 │
-                        │ • Fund deposits │
-                        │ • Distribution  │
-                        │ • History       │
-                        └─────────────────┘
-                                ▲
-                                │
-                                │
-                        ┌─────────────────┐
-                        │ GovernanceToken │
-                        │                 │
-                        │ • ERC20 token   │
-                        │ • Snapshots     │
-                        │ • Mint/burn     │
-                        └─────────────────┘
+🏗️ Architecture
+Contract Relationships
 
-###Idea Lifecycle
+GrantManager ▼
+
+• Round mgmt
+• Coordination
+• Finalization
+
+IdeaRegistry ▼            
+
+• Idea storage              
+• Status updates          
+• Author lookup
+
+VotingSystem ▼ 
+
+• Vote counting 
+• Token staking
+• Winner det.   
+
+FundingPool ▼  
+    
+• Fund deposits 
+• Distribution  
+• History       
+
+GovernanceToken ▼  
+                                         
+• ERC20 token   
+• Snapshots     
+• Mint/burn     
+                    
+Idea Lifecycle
 
 1. Creation → IdeaRegistry.createIdea()
    │
@@ -65,7 +68,7 @@ A decentralized autonomous organization (DAO) grant management system built on E
    ▼
 6. Completed Status (optional manual update)
 
-###Grant Round Flow
+Grant Round Flow
 
 1. Create Round → GrantManager.createRound()
    │
@@ -84,8 +87,8 @@ A decentralized autonomous organization (DAO) grant management system built on E
    ▼
 6. Distribute Funds → GrantManager.distributeFunds()
 
-##📦 Contract Details
-###1. IdeaRegistry (IdeaRegistry.sol)
+📦 Contract Details
+1. IdeaRegistry (IdeaRegistry.sol)
 
 Purpose: Central database for storing and managing ideas with complete metadata.
 
@@ -115,7 +118,7 @@ Status States:
 
     5: Completed - Idea marked as completed (manual update)
 
-###2. GovernanceToken (GovernanceToken.sol)
+2. GovernanceToken (GovernanceToken.sol)
 
 Purpose: ERC20 governance token with snapshot capabilities for historical balance tracking.
 
@@ -139,7 +142,7 @@ Snapshot System:
 
     Essential for off-chain governance voting weight calculations
 
-###3. VotingSystem (VotingSystem.sol)
+3. VotingSystem (VotingSystem.sol)
 
 Purpose: Manages token-staked voting rounds for idea selection.
 
@@ -167,7 +170,7 @@ Voting Process:
 
     Winning idea ID returned to GrantManager
 
-###4. FundingPool (FundingPool.sol)
+4. FundingPool (FundingPool.sol)
 
 Purpose: Custody contract for community deposits and grant distribution.
 
@@ -197,7 +200,7 @@ Distribution Flow:
 
     Records distribution in history
 
-###5. GrantManager (GrantManager.sol)
+5. GrantManager (GrantManager.sol)
 
 Purpose: Central orchestrator managing the complete grant lifecycle.
 
@@ -227,7 +230,7 @@ Round Structure:
 
     Maintains distribution status and timestamp
 
-##🚀 Deployment Guide
+🚀 Deployment Guide
 Prerequisites
 
     Node.js 16+ and npm/yarn
@@ -238,9 +241,9 @@ Prerequisites
 
 Deployment Sequence
 
-###Contracts must be deployed in this specific order:
+Contracts must be deployed in this specific order:
 
-```typescript
+```bash
   // 1. Deploy GovernanceToken
   const token = await ethers.deployContract("GovernanceToken", [
     owner.address,
@@ -289,7 +292,7 @@ Deployment Sequence
   await token.approve(await fundingPool.getAddress(), initialMint);
 ```
 
-###Configuration Parameters
+Configuration Parameters
 
 GovernanceToken:
 
@@ -311,13 +314,13 @@ GrantManager:
 
     grantAmountPerRound: 1000 tokens (1000 * 10¹⁸)
 
-##📝 Usage Guide
-###For Idea Creators
+📝 Usage Guide
+For Idea Creators
 
     Submit Idea
 
-    ```typescript
-
+    ```bash
+    
     await ideaRegistry.createIdea(
       "Project Title",
       "Detailed project description...",
@@ -328,17 +331,17 @@ GrantManager:
 
     Check Idea Status
 
-    ```typescript
+    ```bash
     const idea = await ideaRegistry.getIdea(ideaId);
     // Returns: [id, author, title, description, link, createdAt, totalVotes, status]
 
     ```
 
-###For Community Members
+For Community Members
 
     Deposit Tokens into FundingPool
 
-    ```typescript
+    ```bash
 
     // First approve token spending
     await governanceToken.approve(fundingPoolAddress, depositAmount);
@@ -349,7 +352,7 @@ GrantManager:
     ```
     Vote in Active Rounds
 
-    ```typescript
+    ```bash
 
     // Check active rounds
     const activeRounds = await grantManager.getActiveRounds();
@@ -361,11 +364,11 @@ GrantManager:
     await votingSystem.vote(roundId, ideaId, voteAmount);
 
     ```
-###For DAO Administrators
+For DAO Administrators
 
     Create Grant Round
 
-    ```typescript
+    ```bash
 
     const startTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
     const endTime = startTime + (7 * 24 * 3600); // 7 days duration
@@ -380,7 +383,7 @@ GrantManager:
     ```
     Manage Round Lifecycle
 
-    ```typescript
+    ```bash
 
     // Start voting (after start time)
     await grantManager.startVoting(roundId);
@@ -398,7 +401,7 @@ GrantManager:
 
     Configure System Parameters
   
-    ```typescript
+    ```bash
 
     // Update voting duration
     await votingSystem.setVotingDuration(14 * 24 * 3600); // 14 days
@@ -411,8 +414,8 @@ GrantManager:
 
     ```
 
-##🔒 Security Considerations
-###Access Control
+🔒 Security Considerations
+Access Control
 
     Ownable Pattern: All contracts use OpenZeppelin's Ownable for owner-only functions
 
@@ -422,13 +425,13 @@ GrantManager:
 
     Minter Control: GovernanceToken minting limited to authorized addresses
 
-###Reentrancy Protection
+Reentrancy Protection
 
     VotingSystem and FundingPool use ReentrancyGuard for vote casting and fund distribution
 
     Follows checks-effects-interactions pattern
 
-###Input Validation
+Input Validation
 
     All external inputs are validated (non-zero addresses, valid ranges, etc.)
 
@@ -438,7 +441,7 @@ GrantManager:
 
     GrantManager validates round timing and state transitions
 
-###State Consistency
+State Consistency
 
     Status transitions follow strict lifecycle (cannot skip steps)
 
@@ -446,8 +449,8 @@ GrantManager:
 
     FundingPool prevents double distribution for same round
 
-##🧪 Testing
-###Test Structure
+🧪 Testing
+Test Structure
 
 test/
 ├── GovernanceToken.test.js     # Token minting, burning, snapshots
@@ -457,7 +460,7 @@ test/
 ├── GrantManager.test.js        # Round lifecycle coordination
 └── Integration.test.js         # End-to-end workflow tests
 
-###Running Tests
+Running Tests
 ```bash
 
 # Install dependencies
@@ -473,11 +476,11 @@ npx hardhat test test/VotingSystem.test.js
 npx hardhat coverage
 
 ```
-##🌐 Integration Points
-###Frontend Integration
+🌐 Integration Points
+Frontend Integration
 
 Key contract functions for frontend applications:
-```typescript
+```bash
 
 // Get all ideas
 for (let i = 1; i <= await ideaRegistry.totalIdeas(); i++) {
@@ -496,7 +499,7 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
 ```
 
-###Off-chain Services
+Off-chain Services
 
     Snapshot Analysis: Use balanceOfAt() for historical governance weight calculations
 
@@ -506,14 +509,14 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
     Idea Analytics: Process idea metadata and voting statistics
 
-##🔄 Upgrade Considerations
-###Immutable Components
+🔄 Upgrade Considerations
+Immutable Components
 
     GovernanceToken logic is largely immutable after deployment
 
     VotingSystem and FundingPool have upgradeable parameters via owner functions
 
-###Migration Strategy
+Migration Strategy
 
     Deploy new contract versions
 
@@ -523,9 +526,9 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
     Transfer any necessary state via migration scripts
 
-###Proxy Pattern (Future)
+Proxy Pattern (Future)
 
-###Consider implementing upgradeable proxies for:
+Consider implementing upgradeable proxies for:
 
     GrantManager (coordination logic may evolve)
 
@@ -533,8 +536,8 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
     FundingPool (distribution logic improvements)
 
-##📊 Gas Optimization
-###Storage Patterns
+📊 Gas Optimization
+Storage Patterns
 
     Uses mappings for efficient lookups
 
@@ -542,20 +545,20 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
     Minimal storage writes during voting
 
-###Batch Operations
+Batch Operations
 
     GrantManager handles multiple idea status updates in single transaction
 
     Voting results calculated on-chain efficiently
 
-###View Functions
+View Functions
 
     Optimized view functions for frontend queries
 
     Separate getIdeaAuthor() for minimal data retrieval
 
-##🐛 Known Limitations
-###Current Version
+🐛 Known Limitations
+Current Version
 
     Fixed grant amount per round (not percentage-based)
 
@@ -567,7 +570,7 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
     No automatic snapshot triggering
 
-###Planned Improvements
+Planned Improvements
 
     Dynamic grant amounts based on pool size or votes
 
@@ -579,8 +582,8 @@ const donorBalance = await fundingPool.donorBalances(userAddress);
 
     Automated snapshot creation at round start
 
-##🤝 Contributing
-###Development Setup
+🤝 Contributing
+Development Setup
 ```bash
 
 # Clone repository
@@ -611,9 +614,9 @@ Code Style
 
     Maintain test coverage above 90%
 
-##📄 License
+📄 License
 
-###MIT License - see LICENSE file for details.
+MIT License - see LICENSE file for details.
 🙏 Acknowledgments
 
     OpenZeppelin Contracts for secure, audited base implementations
